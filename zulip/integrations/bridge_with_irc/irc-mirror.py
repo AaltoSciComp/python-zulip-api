@@ -33,6 +33,7 @@ if __name__ == "__main__":
     parser.add_argument('--stream', default="general")
     parser.add_argument('--topic', default="IRC")
     parser.add_argument('--nickserv-pw', default='')
+    parser.add_argument('--all-topics', action='store_true', default=False)
 
     options = parser.parse_args()
     # Setting the client to irc_mirror is critical for this to work
@@ -51,5 +52,6 @@ if __name__ == "__main__":
 
     nickname = options.nick_prefix + "_zulip"
     bot = IRCBot(zulip_client, options.stream, options.topic, options.channel,
-                 nickname, options.irc_server, options.nickserv_pw, options.port)
+                 nickname, options.irc_server, options.nickserv_pw, options.port,
+                 all_topics=options.all_topics)
     bot.start()

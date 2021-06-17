@@ -1,3 +1,4 @@
+import re
 import irc.bot
 import irc.strings
 from irc.client import Event, ServerConnection, ip_numstr_to_quad
@@ -10,15 +11,19 @@ class IRCBot(irc.bot.SingleServerIRCBot):
     reactor_class = AioReactor
 
     def __init__(self, zulip_client: Any, stream: str, topic: str, channel: irc.bot.Channel,
-                 nickname: str, server: str, nickserv_password: str = '', port: int = 6667) -> None:
+                 nickname: str, server: str, nickserv_password: str = '', port: int = 6667,
+                 all_topics: bool = False) -> None:
         self.channel = channel  # type: irc.bot.Channel
         self.zulip_client = zulip_client
         self.stream = stream
         self.topic = topic
         self.IRC_DOMAIN = server
         self.nickserv_password = nickserv_password
+        self.all_topics = all_topics
         # Make sure the bot is subscribed to the stream
         self.check_subscription_or_die()
+        self._manager = mp.Manager()
+        self.seen_topics = self._manager.dict()
         # Initialize IRC bot after proper connection to Zulip server has been confirmed.
         irc.bot.SingleServerIRCBot.__init__(self, [(server, port)], nickname, nickname)
 
@@ -54,8 +59,10 @@ class IRCBot(irc.bot.SingleServerIRCBot):
             c.privmsg('NickServ', msg)
         c.join(self.channel)
 
-        def forward_to_irc(msg: Dict[str, Any]) -> None:
+        def forward_to_irc(msg: Dict[str, Any], seen_topics=self.seen_topics) -> None:
             not_from_zulip_bot = msg["sender_email"] != self.zulip_client.email
+            print(msg)
+            print(self.all_topics)
             if not not_from_zulip_bot:
                 # Do not forward echo
                 return
@@ -64,7 +71,19 @@ class IRCBot(irc.bot.SingleServerIRCBot):
                 in_the_specified_stream = msg["display_recipient"] == self.stream
                 at_the_specified_subject = msg["subject"].casefold() == self.topic.casefold()
                 if in_the_specified_stream and at_the_specified_subject:
-                    msg["content"] = ("@**%s**: " % msg["sender_full_name"]) + msg["content"]
+                    msg["content"] = ("<%s> " % msg["sender_full_name"]) + msg["content"]
+                    seen_topics[self.topic] = self.topic
+                    send = lambda x: self.c.privmsg(self.channel, x)
+                elif in_the_specified_stream and msg["content"].startswith(self.channel):
+                    topic = msg["subject"]
+                    msg["content"] = msg["content"][len(self.channel):].lstrip(' :,')
+                    msg["content"] = ("\x02%s\x02 <%s> " % (topic, msg["sender_full_name"])) + msg["content"]
+                    seen_topics[topic] = topic
+                    send = lambda x: self.c.privmsg(self.channel, x)
+                elif in_the_specified_stream and self.all_topics:
+                    topic = msg["subject"]
+                    msg["content"] = ("\x02%s\x02 <%s> " % (topic, msg["sender_full_name"])) + msg["content"]
+                    seen_topics[topic] = topic
                     send = lambda x: self.c.privmsg(self.channel, x)
                 else:
                     return
@@ -101,12 +120,26 @@ class IRCBot(irc.bot.SingleServerIRCBot):
         if sender.endswith("_zulip@" + self.IRC_DOMAIN):
             return
 
+        message_topic = content.split(':')[0]
+        print(self.seen_topics)
+        topic_match = re.match(r"^([^:]{,20})::\s+(.*)", content)
+        #print(repr(content))
+        #print(repr(self.seen_topics))
+        if message_topic in self.seen_topics:
+            topic = message_topic
+            content = content.split(':', 1)[-1].lstrip()
+        elif topic_match:
+            topic = topic_match.group(1)
+            content = topic_match.group(2)
+        else:
+            topic = self.topic
+
         # Forward the stream message to Zulip
         print(self.zulip_client.send_message({
             "type": "stream",
             "to": self.stream,
-            "subject": self.topic,
-            "content": "**{}**: {}".format(sender, content),
+            "subject": topic,
+            "content": "**<{}>** {}".format(sender.split('@')[0], content),
         }))
 
     def on_dccmsg(self, c: ServerConnection, e: Event) -> None:
