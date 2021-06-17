@@ -95,7 +95,14 @@ class IRCBot(irc.bot.SingleServerIRCBot):
                 else:
                     send = lambda x: self.c.privmsg_many(recipients, x)
             for line in msg["content"].split("\n"):
-                send(line)
+                #max_length = 510 - c.get_nickname()
+                #n_lines = (len(x)-1) // 5 + 1
+                try:
+                    send(line)
+                except:
+                    import traceback
+                    traceback.print_exc()
+                    send("[error sending line]")
 
         z2i = mp.Process(target=self.zulip_client.call_on_each_message, args=(forward_to_irc,))
         z2i.start()
