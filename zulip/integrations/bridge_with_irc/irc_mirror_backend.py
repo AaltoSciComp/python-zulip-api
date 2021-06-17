@@ -1,4 +1,5 @@
 import re
+import textwrap
 import irc.bot
 import irc.strings
 from irc.client import Event, ServerConnection, ip_numstr_to_quad
@@ -95,14 +96,19 @@ class IRCBot(irc.bot.SingleServerIRCBot):
                 else:
                     send = lambda x: self.c.privmsg_many(recipients, x)
             for line in msg["content"].split("\n"):
-                #max_length = 510 - c.get_nickname()
-                #n_lines = (len(x)-1) // 5 + 1
-                try:
-                    send(line)
-                except:
-                    import traceback
-                    traceback.print_exc()
-                    send("[error sending line]")
+                # The raw message is of format "PRIVMSG #channel :text\r\n", the
+                # RFC limits the max length for said message to 512 bytes.
+                # IRCnet (or irc.cs.hut.fi) seems to truncate long messages to
+                # 452 characters (excluding metadata)
+                max_length = min(450, 500 - len(c.get_nickname()) - len(self.channel))
+                parts = textwrap.wrap(line, max_length)
+                for part in parts:
+                    try:
+                        send(part)
+                    except:
+                        import traceback
+                        traceback.print_exc()
+                        send("[error sending line]")
 
         z2i = mp.Process(target=self.zulip_client.call_on_each_message, args=(forward_to_irc,))
         z2i.start()
