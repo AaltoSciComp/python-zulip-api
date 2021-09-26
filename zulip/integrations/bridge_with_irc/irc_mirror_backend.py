@@ -148,12 +148,15 @@ class IRCBot(irc.bot.SingleServerIRCBot):
             topic = self.topic
 
         # Forward the stream message to Zulip
-        print(self.zulip_client.send_message({
-            "type": "stream",
-            "to": self.stream,
-            "subject": topic,
-            "content": "**<{}>** {}".format(sender.split('@')[0], content),
-        }))
+        try:
+            print(self.zulip_client.send_message({
+                "type": "stream",
+                "to": self.stream,
+                "subject": topic,
+                "content": "**<{}>** {}".format(sender.split('@')[0], content),
+            }))
+        except:
+            exit(1)
 
     def on_dccmsg(self, c: ServerConnection, e: Event) -> None:
         c.privmsg("You said: " + e.arguments[0])
